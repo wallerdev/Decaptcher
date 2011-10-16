@@ -7,11 +7,22 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace Decaptcher.Test
 {
     [TestClass]
-    public class UnitTest1
+    public class DecaptcherTest
     {
-        [TestMethod]
-        public void TestMethod1()
+        private string _username;
+        private string _password;
+
+        [TestInitialize]
+        public void Initialize()
         {
+            
+        }
+
+
+        [TestMethod]
+        public void TestCheckBalance()
+        {
+
         }
     }
 }
