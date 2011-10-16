@@ -30,6 +30,7 @@ namespace Decaptcher.Test
             var client = new CCProto();
             Assert.AreNotEqual(APIConstants.ccERR_OK, client.Login("api.decaptcher.com", _port, string.Empty, string.Empty));
             Assert.AreEqual(APIConstants.ccERR_OK, client.Login("api.decaptcher.com", _port, _username, _password));
+            Assert.AreEqual(APIConstants.ccERR_OK, client.Close());
         }
 
         [TestMethod]
@@ -40,6 +41,7 @@ namespace Decaptcher.Test
             var balance = client.GetBalance();
             Assert.AreEqual(APIConstants.ccERR_OK, balance.ReturnCode);
             Assert.IsTrue(double.Parse(balance.Balance) > 0);
+            Assert.AreEqual(APIConstants.ccERR_OK, client.Close());
         }
 
         [TestMethod]
@@ -50,7 +52,7 @@ namespace Decaptcher.Test
             var result = client.picture2(File.ReadAllBytes("../../../sample.png"), 30, (int)PictureType.Unspecified);
             Assert.AreEqual(APIConstants.ccERR_OK, result.returnCode);
             Assert.AreEqual("3sqb7u7", result.text.ToLowerInvariant());
-
+            Assert.AreEqual(APIConstants.ccERR_OK, client.Close());
         }
     }
 }

@@ -666,7 +666,7 @@ namespace Decaptcher
             }
         }
 
-        public int close()
+        public int Close()
         {
             CCProtoPacket pack = new CCProtoPacket();
 
@@ -685,7 +685,7 @@ namespace Decaptcher
             catch (Exception e) { }
             _status = sCCC_INIT;
 
-            return APIConstants.ccERR_NET_ERROR;
+            return APIConstants.ccERR_OK;
         } // close()
     }
 }
