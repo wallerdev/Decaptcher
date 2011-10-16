@@ -8,6 +8,13 @@ using System.Security.Cryptography;
 
 namespace Decaptcher
 {
+    public enum PictureType
+    {
+        Unspecified = 0,
+        Asirra = 86,
+        Unknown
+    }
+
     public class APIConstants
     {
         public const int ccERR_OK = 0; // everything went OK
@@ -59,49 +66,38 @@ namespace Decaptcher
         public const int SIZEOF_CC_PACKET = 6;
         public const int SIZEOF_CC_PICT_DESCR = 20;
 
+        public int Version { get; set; }
+        public int Command { get; set; }
+        public int Size { get; set; }
 
-        private int _ver = CC_PROTO_VER; // version of the protocol
-        private int _cmd = cmdCC_BYE; // command, see cc_cmd_t
-        private int _size = 0;   // data size in consequent bytes 
         private byte[] _data = null;   // packet payload
 
-        /**
-         * @param cmd
-         * @return
-         */
-        private bool checkPackHdr(int cmd, int size)
+        public CCProtoPacket()
         {
-            if (_ver != CC_PROTO_VER)
+            Version = CC_PROTO_VER;
+            Command = cmdCC_BYE;
+        }
+
+        private bool CheckHeader(int command, int size)
+        {
+            if (Version != CC_PROTO_VER)
                 return false;
-            if ((cmd != -1) && (_cmd != cmd))
+            if ((command != -1) && (Command != command))
                 return false;
-            if ((size != -1) && (_size != size))
+            if ((size != -1) && (Size != size))
                 return false;
 
             return true;
         }
 
-        public static int swapInt(int value)
-        {
-            int b1 = (value >> 0) & 0xff;
-            int b2 = (value >> 8) & 0xff;
-            int b3 = (value >> 16) & 0xff;
-            int b4 = (value >> 24) & 0xff;
-
-            return b1 << 24 | b2 << 16 | b3 << 8 | b4 << 0;
-        }
-
-        /**
-         *
-         */
-        public bool packTo(Stream oos)
+        public bool PackTo(Stream oos)
         {
             try
             {
-                oos.WriteByte((byte)_ver);
-                oos.WriteByte((byte)_cmd);
                 var writer = new BinaryWriter(oos);
-                writer.Write(_size);
+                writer.Write((byte)Version);
+                writer.Write((byte)Command);
+                writer.Write(Size);
                 if (_data != null)
                 {
                     if (_data.Length > 0)
@@ -118,18 +114,14 @@ namespace Decaptcher
             }
         }
 
-        /**
-         *
-         */
-        private bool unpackHeader(Stream ios)
+        private bool UnpackHeader(Stream ios)
         {
             try
             {
-                _ver = (int)ios.ReadByte();
-                _cmd = (int)ios.ReadByte();
                 var reader = new BinaryReader(ios);
-                _size = reader.ReadInt32();
-
+                Version = (int)reader.ReadByte();
+                Command = (int)reader.ReadByte();
+                Size = reader.ReadInt32();
 
                 return true;
             }
@@ -139,37 +131,37 @@ namespace Decaptcher
             }
         }
 
-        public static byte[] ReadFully(Stream input)
+        public static byte[] ReadFully(Stream input, int bytesToRead)
         {
-            byte[] buffer = new byte[16 * 1024];
-            using (MemoryStream ms = new MemoryStream())
+            byte[] data = new byte[bytesToRead];
+            int offset = 0;
+            int remaining = data.Length;
+            while (remaining > 0)
             {
-                int read;
-                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    ms.Write(buffer, 0, read);
-                }
-                return ms.ToArray();
+                int read = input.Read(data, offset, remaining);
+                remaining -= read;
+                offset += read;
             }
+            return data;
         }
 
         /**
          *
          */
-        public bool unpackFrom(Stream dis, int cmd, int size)
+        public bool UnpackFrom(Stream dis, int cmd, int size)
         {
-            unpackHeader(dis);
+            UnpackHeader(dis);
 
-            if (checkPackHdr(cmd, size) == false)
+            if (CheckHeader(cmd, size) == false)
                 return false;
 
             try
             {
-                if (_size > 0)
+                if (Size > 0)
                 {
                     // check error
-                    _data = new byte[_size];
-                    _data = ReadFully(dis);
+                    _data = new byte[Size];
+                    _data = ReadFully(dis, Size);
                 }
                 else
                 {
@@ -183,52 +175,23 @@ namespace Decaptcher
             }
         }
 
-        public void setVer(int ver)
-        {
-            _ver = ver;
-        }
-
-        int getVer()
-        {
-            return _ver;
-        }
-
-        public void setCmd(int cmd)
-        {
-            _cmd = cmd;
-        }
-
-        public int getCmd()
-        {
-            return _cmd;
-        }
-
-        public void setSize(int size)
-        {
-            _size = size;
-        }
-
-        int getSize()
-        {
-            return _size;
-        }
 
         public int calcSize()
         {
             if (_data != null)
             {
-                _size = _data.Length;
+                Size = _data.Length;
             }
             else
             {
-                _size = 0;
+                Size = 0;
             }
-            return _size;
+            return Size;
         }
 
         int getFullSize()
         {
-            return SIZEOF_CC_PACKET + _size;
+            return SIZEOF_CC_PACKET + Size;
         }
 
         public void setData(byte[] data)
@@ -410,6 +373,23 @@ namespace Decaptcher
         }
     }
 
+    public class BalanceResult
+    {
+        public int ReturnCode { get; private set; }
+        public string Balance { get; private set; }
+
+        public BalanceResult(int returnCode)
+            : this(returnCode, string.Empty)
+        {
+        }
+
+        public BalanceResult(int returnCode, string balance)
+        {
+            ReturnCode = returnCode;
+            Balance = balance;
+        }
+    }
+
     public class CCProto
     {
         public const int sCCC_INIT = 1;  // initial status, ready to issue LOGIN on client
@@ -425,7 +405,7 @@ namespace Decaptcher
         /**
          *
          */
-        public int login(String hostname, int port, String login, String pwd)
+        public int Login(string hostname, int port, string username, string password)
         {
             CCProtoPacket pack = null;
             var md5 = MD5.Create();
@@ -447,23 +427,22 @@ namespace Decaptcher
             }
 
             pack = new CCProtoPacket();
-            pack.setVer(CCProtoPacket.CC_PROTO_VER);
 
-            pack.setCmd(CCProtoPacket.cmdCC_LOGIN);
-            pack.setSize(login.Length);
-            pack.setData(Encoding.ASCII.GetBytes(login));
+            pack.Command = CCProtoPacket.cmdCC_LOGIN;
+            pack.Size = username.Length;
+            pack.setData(Encoding.ASCII.GetBytes(username));
 
-            if (pack.packTo(_stream) == false)
+            if (pack.PackTo(_stream) == false)
             {
                 return APIConstants.ccERR_NET_ERROR;
             }
 
-            if (pack.unpackFrom(_stream, CCProtoPacket.cmdCC_RAND, CCProtoPacket.CC_RAND_SIZE) == false)
+            if (pack.UnpackFrom(_stream, CCProtoPacket.cmdCC_RAND, CCProtoPacket.CC_RAND_SIZE) == false)
             {
                 return APIConstants.ccERR_NET_ERROR;
             }
 
-            byte[] md5bin = md5.ComputeHash(Encoding.ASCII.GetBytes(pwd));
+            byte[] md5bin = md5.ComputeHash(Encoding.ASCII.GetBytes(password));
             String md5str = "";
             char[] cvt = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
             for (i = 0; i < md5bin.Length; i++)
@@ -472,7 +451,7 @@ namespace Decaptcher
                 md5str += cvt[md5bin[i] & 0x0F];
             }
 
-            byte[] shabuf = new byte[pack.getData().Length + md5str.Length + login.Length];
+            byte[] shabuf = new byte[pack.getData().Length + md5str.Length + username.Length];
             j = 0;
             for (i = 0; i < pack.getData().Length; i++, j++)
             {
@@ -482,23 +461,22 @@ namespace Decaptcher
             {
                 shabuf[j] = Encoding.ASCII.GetBytes(md5str)[i];
             }
-            for (i = 0; i < Encoding.ASCII.GetBytes(login).Length; i++, j++)
+            for (i = 0; i < Encoding.ASCII.GetBytes(username).Length; i++, j++)
             {
-                shabuf[j] = Encoding.ASCII.GetBytes(login)[i];
+                shabuf[j] = Encoding.ASCII.GetBytes(username)[i];
             }
 
             pack = new CCProtoPacket();
-            pack.setVer(CCProtoPacket.CC_PROTO_VER);
-            pack.setCmd(CCProtoPacket.cmdCC_HASH);
-            pack.setSize(CCProtoPacket.CC_HASH_SIZE);
+            pack.Command = CCProtoPacket.cmdCC_HASH;
+            pack.Size = CCProtoPacket.CC_HASH_SIZE;
             pack.setData(sha.ComputeHash(shabuf));
 
-            if (pack.packTo(_stream) == false)
+            if (pack.PackTo(_stream) == false)
             {
                 return APIConstants.ccERR_NET_ERROR;
             }
 
-            if (pack.unpackFrom(_stream, CCProtoPacket.cmdCC_OK, 0) == false)
+            if (pack.UnpackFrom(_stream, CCProtoPacket.cmdCC_OK, 0) == false)
             {
                 return APIConstants.ccERR_NET_ERROR;
             }
@@ -570,8 +548,7 @@ namespace Decaptcher
                 return APIConstants.ccERR_STATUS;
 
             CCProtoPacket pack = new CCProtoPacket();
-            pack.setVer(CCProtoPacket.CC_PROTO_VER);
-            pack.setCmd(CCProtoPacket.cmdCC_PICTURE2);
+            pack.Command = CCProtoPacket.cmdCC_PICTURE2;
 
 
             CCPictDescr desc = new CCPictDescr();
@@ -585,17 +562,17 @@ namespace Decaptcher
             pack.setData(desc.pack());
             pack.calcSize();
 
-            if (pack.packTo(_stream) == false)
+            if (pack.PackTo(_stream) == false)
             {
                 return APIConstants.ccERR_NET_ERROR;
             }
 
-            if (pack.unpackFrom(_stream, -1, -1) == false)
+            if (pack.UnpackFrom(_stream, -1, -1) == false)
             {
                 return APIConstants.ccERR_NET_ERROR;
             }
 
-            switch (pack.getCmd())
+            switch (pack.Command)
             {
                 case CCProtoPacket.cmdCC_TEXT2:
                     desc.unpack(pack.getData());
@@ -637,8 +614,7 @@ namespace Decaptcher
         {
             CCProtoPacket pack = new CCProtoPacket();
 
-            pack.setVer(CCProtoPacket.CC_PROTO_VER);
-            pack.setCmd(CCProtoPacket.cmdCC_PICTUREFL);
+            pack.Command = CCProtoPacket.cmdCC_PICTUREFL;
 
             CCPictDescr desc = new CCPictDescr();
             desc.setTimeout(APIConstants.ptoDEFAULT);
@@ -650,7 +626,7 @@ namespace Decaptcher
             pack.setData(desc.pack());
             pack.calcSize();
 
-            if (pack.packTo(_stream) == false)
+            if (pack.PackTo(_stream) == false)
             {
                 return APIConstants.ccERR_NET_ERROR;
             }
@@ -658,51 +634,46 @@ namespace Decaptcher
             return APIConstants.ccERR_NET_ERROR;
         } // picture_bad2()
 
-        public int balance(String[] balance)
+        public BalanceResult GetBalance()
         {
             CCProtoPacket pack = null;
 
             if (_status != sCCC_PICTURE)
-                return APIConstants.ccERR_STATUS;
+            {
+                return new BalanceResult(APIConstants.ccERR_STATUS);
+            }
 
             pack = new CCProtoPacket();
-            pack.setVer(CCProtoPacket.CC_PROTO_VER);
-            pack.setCmd(CCProtoPacket.cmdCC_BALANCE);
-            pack.setSize(0);
+            pack.Command = CCProtoPacket.cmdCC_BALANCE;
+            pack.Size = 0;
 
-            if (pack.packTo(_stream) == false)
+            if (pack.PackTo(_stream) == false)
             {
-                return APIConstants.ccERR_NET_ERROR;
+                return new BalanceResult(APIConstants.ccERR_NET_ERROR);
             }
 
-            if (pack.unpackFrom(_stream, -1, -1) == false)
+            if (pack.UnpackFrom(_stream, -1, -1) == false)
             {
-                return APIConstants.ccERR_NET_ERROR;
+                return new BalanceResult(APIConstants.ccERR_NET_ERROR);
             }
 
-            switch (pack.getCmd())
+            switch (pack.Command)
             {
                 case CCProtoPacket.cmdCC_BALANCE:
-
-                    balance[0] = Encoding.ASCII.GetString(pack.getData());
-
-                    return APIConstants.ccERR_OK;
-
+                    return new BalanceResult(APIConstants.ccERR_OK, Encoding.ASCII.GetString(pack.getData()));
                 default:
-                    // unknown error
-                    return APIConstants.ccERR_UNKNOWN;
+                    return new BalanceResult(APIConstants.ccERR_UNKNOWN);
             }
-        } // balance()
+        }
 
         public int close()
         {
             CCProtoPacket pack = new CCProtoPacket();
-            pack.setVer(CCProtoPacket.CC_PROTO_VER);
 
-            pack.setCmd(CCProtoPacket.cmdCC_BYE);
-            pack.setSize(0);
+            pack.Command = CCProtoPacket.cmdCC_BYE;
+            pack.Size = 0;
 
-            if (pack.packTo(_stream) == false)
+            if (pack.PackTo(_stream) == false)
             {
                 return APIConstants.ccERR_NET_ERROR;
             }
