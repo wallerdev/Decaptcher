@@ -6,7 +6,7 @@ using System.IO;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 
-namespace Decaptcher
+namespace WallerDev.Decaptcher
 {
     public enum PictureType
     {
